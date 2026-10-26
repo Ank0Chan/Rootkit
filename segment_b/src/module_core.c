@@ -11,9 +11,11 @@
 #include <linux/module.h>
 #include <linux/init.h>
 
-/* Entry points exported by companion_dev.c. */
-int companion_dev_register(void);
-void companion_dev_unregister(void);
+#include "../include/companion_dev.h"
+
+/* ------------------------------------------------------------------ *
+ *  Module lifecycle
+ * ------------------------------------------------------------------ */
 
 /*
  * rootkit_b_init - module load path.
@@ -54,6 +56,10 @@ static void __exit rootkit_b_exit(void)
 
 module_init(rootkit_b_init);
 module_exit(rootkit_b_exit);
+
+/* ------------------------------------------------------------------ *
+ *  Module metadata
+ * ------------------------------------------------------------------ */
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Segment B");

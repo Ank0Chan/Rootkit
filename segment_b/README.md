@@ -58,23 +58,41 @@ rootkit_b: ready
   et `cmd_response` (statut + données), partagées entre noyau et userland.
   Voir `docs/interface_contract.md` pour le contrat figé.
 
-## TODO (à implémenter par l'étudiant)
+## État du protocole
 
-Les squelettes suivants sont à compléter dans le corps des fonctions :
+La chaîne de commande est implémentée dans `companion_dev.c` :
 
-- `companion_write()` — copier les octets entrants dans un buffer noyau
-  borné, valider `len` et `arg_len`, puis dispatcher sur
-  `cmd_request.command`. Rejeter toute requête malformée/surdimensionnée
-  avec `-EINVAL`. **Ne jamais faire confiance à `len`/`arg_len` sans
-  contrôle de bornes.**
-- `companion_read()` — restituer la `cmd_response` préparée par la dernière
-  commande au lieu de renvoyer 0.
-- `companion_ioctl()` — définir l'espace de commandes ioctl (magic number,
-  encodages `_IOW`/`_IOR`) si ce chemin est retenu, sinon le laisser
-  renvoyer `-ENOTTY`.
-- Implémenter la sémantique de chaque `CMD_*` et remplir le tableau des
-  commandes dans `docs/interface_contract.md`.
+- `companion_write()` — copie bornée (`copy_from_user`), validation de
+  `len`/`arg_len`, dispatch sur `cmd_request.command`, mise en file de la
+  réponse.
+- `companion_read()` — restitue la `cmd_response` préparée (lectures
+  partielles supportées).
+- Commandes : `CMD_PING`, `CMD_GET_VERSION`, `CMD_SET_FLAG`,
+  `CMD_CLEAR_FLAG` ; commande inconnue → `CMD_STATUS_UNKNOWN`.
+
+Voir `docs/interface_contract.md` pour le détail des arguments et retours.
+
+### Test rapide depuis l'espace utilisateur (en root dans la VM)
+
+```sh
+# CMD_PING : command=0x01, arg_len=0 -> 8 octets d'en-tête
+printf '\x01\x00\x00\x00\x00\x00\x00\x00' > /dev/companion
+# puis lire la réponse (status s32 + data_len u32)
+dd if=/dev/companion bs=8 count=1 2>/dev/null | xxd
+```
+
+(Le compagnon du segment D fournira l'outil propre pour sérialiser les
+requêtes ; la commande ci-dessus n'est qu'une vérification manuelle.)
+
+## TODO restant
+
+- `companion_ioctl()` — laissé en `-ENOTTY`. À définir seulement si un
+  chemin ioctl (magic number, `_IOW`/`_IOR`) s'avère nécessaire.
+- Enrichir le jeu de commandes (codes ≥ `0x05`) selon le catalogue décidé
+  avec D ; brancher la logique métier réelle derrière les flags.
+- Mécanisme de remplacement d'appels système (autre livrable du segment B,
+  support des hooks de C) — hors de ce fichier.
 
 Contraintes à respecter : identifiants en anglais, style C ANSSI, aucune
-ressource fuitée (tout ce qui est alloué dans `init` est libéré dans
-`exit`), pas de hook de l'appel système `kill`.
+ressource fuitée (tout ce qui est alloué dans `init`/`open` est libéré dans
+`exit`/`release`), pas de hook de l'appel système `kill`.

@@ -27,15 +27,30 @@ tant que le nom `companion` et le format de `protocol.h` restent inchangés.
 
 ## Commandes disponibles
 
-Numérotation fixée à J1 (stable). La sémantique précise est implémentée
-par B ; les cases ci-dessous sont des placeholders à compléter.
+Numérotation fixée à J1 (stable). La sémantique est implémentée par B
+dans `companion_dev.c`.
 
-| Nom              | Code hex | Argument (payload)      | Retour (data)            |
-| ---------------- | -------- | ----------------------- | ------------------------ |
-| `CMD_PING`       | `0x01`   | aucun                   | _(à compléter)_          |
-| `CMD_GET_VERSION`| `0x02`   | aucun                   | chaîne de version        |
-| `CMD_SET_FLAG`   | `0x03`   | _(à compléter)_         | _(à compléter)_          |
-| `CMD_CLEAR_FLAG` | `0x04`   | _(à compléter)_         | _(à compléter)_          |
+| Nom              | Code hex | Argument (payload)            | Statut / data retournés                          |
+| ---------------- | -------- | ----------------------------- | ------------------------------------------------ |
+| `CMD_PING`       | `0x01`   | aucun (`arg_len = 0`)         | `OK`, aucune donnée                              |
+| `CMD_GET_VERSION`| `0x02`   | aucun (`arg_len = 0`)         | `OK`, chaîne de version (sans NUL final)        |
+| `CMD_SET_FLAG`   | `0x03`   | 1 × `u32` index de flag       | `OK` si index < 64, sinon `ERR` ; aucune donnée |
+| `CMD_CLEAR_FLAG` | `0x04`   | 1 × `u32` index de flag       | `OK` si index < 64, sinon `ERR` ; aucune donnée |
+
+Toute commande inconnue renvoie `CMD_STATUS_UNKNOWN`. L'index de flag doit
+être dans `[0, BITS_PER_LONG)` (64 sur une cible 64 bits).
+
+**Contraintes de trame (validées par B, rejet avec `-errno`) :**
+
+- `write()` doit transmettre au moins `sizeof(struct cmd_request)` octets
+  (sinon `-EINVAL`).
+- `arg_len` doit valoir exactement `taille_écrite - sizeof(struct cmd_request)`
+  (sinon `-EINVAL`).
+- La taille totale écrite est bornée à `sizeof(struct cmd_request) + 4096`
+  (sinon `-EMSGSIZE`).
+- La réponse se lit ensuite via `read()` ; elle supporte les lectures
+  partielles. Une nouvelle commande (`write()`) remplace toute réponse non
+  encore lue.
 
 Codes de statut (`cmd_response.status`) :
 
