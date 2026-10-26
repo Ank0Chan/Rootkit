@@ -1,2 +1,10 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Auto detect text files; normalize to LF in the repo AND in the working tree.
+# This project is built on Linux (LKM in a QEMU/LFS VM): CRLF would break
+# Makefiles and shell scripts, so force LF regardless of core.autocrlf.
+* text=auto eol=lf
+
+# Keep known binary assets untouched.
+*.pdf   binary
+*.qcow2 binary
+*.img   binary
+*.ko    binary
